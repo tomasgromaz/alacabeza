@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Actualiza data/resultados.json leyendo los extractos publicados en páginas web.
 
-Consulta VARIAS fuentes a la vez (la web oficial de la Lotería de la Ciudad, La Nación y El Cronista) y, para cada sorteo, se queda con la
+Consulta VARIAS fuentes a la vez (la web oficial de la Lotería de la Ciudad, La Nación, El Cronista y, como respaldo, NotiTimba) y, para cada sorteo, se queda con la
 primera que lo trae completo y válido (20 premios, que coincidan con "A la cabeza").
 Si otra fuente trae el mismo sorteo con números distintos, deja un aviso y no pisa lo ya guardado.
 
@@ -10,12 +10,17 @@ Uso normal (lo corre GitHub Actions cada pocos minutos):
 
 Opciones útiles:
     --siempre                         consulta todas las fuentes aunque no haya sorteos pendientes
+
+Historial: se guardan 10 días (hoy y los 9 anteriores). Si en esos días falta algún sorteo ya jugado, el mismo comando
+lo rellena desde la web oficial, que publica unas 4 semanas de sorteos. Por eso alcanza con correr una vez el flujo a mano.
     --archivo pagina.html --quiniela provincia
                                       lee un HTML guardado de La Nación y muestra qué entendió (no escribe nada)
     --archivo nota.html --quiniela entrerios --fuente cronista --turno vespertina --fecha 2026-11-14
                                       lo mismo con una nota de El Cronista
     --archivo sorteo.js --fuente oficial
                                       lo mismo con el archivo de un sorteo de la web oficial (muestra las 6 quinielas)
+    --archivo respuesta.txt --fuente notitimba
+                                      lo mismo con una respuesta guardada de notitimba.com/lots/cfms/aQsEq.php
 
 Solo usa la librería estándar de Python.
 """
@@ -27,6 +32,7 @@ import unicodedata
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
+from functools import partial
 from html.parser import HTMLParser
 from pathlib import Path
 from threading import Lock
@@ -34,7 +40,7 @@ from threading import Lock
 AR = timezone(timedelta(hours=-3))                      # Argentina no usa horario de verano
 RAIZ = Path(__file__).resolve().parent.parent
 SALIDA = RAIZ / "data" / "resultados.json"
-DIAS_A_GUARDAR = 8
+DIAS_A_GUARDAR = 10                                     # días corridos: hoy y los 9 anteriores (los domingos no hay sorteos)
 MINUTOS_DE_ESPERA = 120                                 # cuánto se sigue buscando un sorteo después de su hora
 
 # Quinielas que maneja la app.
@@ -63,7 +69,9 @@ HORARIOS = {
     "base": {"previa": "10:15", "primera": "12:00", "matutina": "15:00", "vespertina": "18:00", "nocturna": "21:00"},
     "montevideo": {"matutina": "15:00", "nocturna": "21:00"},
 }
-CIFRAS = {"montevideo": (3, 4)}                         # el resto tiene 4 cifras
+# Todas las quinielas se muestran con 4 cifras. Montevideo sortea 3 y toma la primera cifra del número de Ciudad (Nacional)
+# que salió en la misma posición: las fuentes ya lo traen armado de 4, pero si alguna lo trae de 3 se completa (ajustar_montevideo).
+CIFRAS = {"montevideo": (3, 4)}
 TURNOS = ("previa", "primera", "matutina", "vespertina", "nocturna")
 
 
@@ -433,23 +441,24 @@ def sorteo_oficial(datos, quiniela):
     return sorteo, avisos
 
 
-def leer_oficial(quiniela, ahora, bajar, ya_tiene=lambda fecha, turno: False):
-    """Mira en la portada oficial los sorteos de hoy y de ayer que ya salieron y baja el archivo de los que faltan."""
+def leer_oficial(quiniela, ahora, bajar, ya_tiene=lambda fecha, turno: False, dias_atras=1, tope=12):
+    """Mira en la portada oficial los sorteos que ya salieron desde hace `dias_atras` días y baja el archivo de los que faltan
+    (como mucho `tope`, los más nuevos primero). Normalmente alcanza con hoy y ayer; para rellenar el historial se mira más atrás."""
     portada = bajar(OFICIAL + "/")
     if not OFICIAL_LISTA.search(portada):
         return [], ["No encontré la lista de sorteos en la portada oficial. ¿Cambió la página?"]
-    desde = (ahora.date() - timedelta(days=1)).isoformat()
+    desde = (ahora.date() - timedelta(days=dias_atras)).isoformat()
     publicados = []
     for n, d, mes, a, mod in OFICIAL_LISTA.findall(portada):
         fecha, turno = f"{a}-{mes}-{d}", _sin_tildes(mod).lower()
         if turno not in TURNOS or fecha < desde:
             continue
-        if quiniela == "montevideo" and turno not in HORARIOS["montevideo"]:
-            continue
+        if turno not in turnos_del_dia(quiniela, date.fromisoformat(fecha).weekday()):
+            continue                                    # esa quiniela no sortea ese turno ese día (Montevideo, sábados)
         if not ya_tiene(fecha, turno):
             publicados.append((int(n), fecha, turno))
     sorteos, avisos = [], []
-    for n, fecha, turno in sorted(publicados, reverse=True)[:12]:
+    for n, fecha, turno in sorted(publicados, reverse=True)[:tope]:
         etiqueta = f"{quiniela} {turno} {fecha}"
         try:
             datos = leer_datos_oficiales(bajar(OFICIAL_DATOS.format(n)))
@@ -469,6 +478,103 @@ def leer_oficial(quiniela, ahora, bajar, ya_tiene=lambda fecha, turno: False):
         if s:
             sorteos.append(s)
     return sorteos, avisos
+
+
+# ---------- NotiTimba (solo respaldo) ----------
+# Sitio privado con anuncios. Su página "en vivo" le pide los resultados a este archivo cada ~24 segundos.
+# El formato no es público: se dedujo del script de la propia página y de una respuesta real (14/11/2026).
+# Respuesta = campos separados por "|":  [0] "modo ç banderas ç aviso"  [1] HTML  [2] fecha AAAAMMDD  [3] segundos de refresco
+#   [4] "banderas&n&turno" (D previa, P primera, M matutina, V vespertina, N nocturna)  [5] letras de la Ciudad
+#   y después 25 bloques de 4 campos (uno por jurisdicción, en el orden de abajo): estado, cifras, 20 premios, vacío.
+#   Cada premio ocupa 6 caracteres: "00" + 4 cifras. Estado 0 = sin sorteo. Modo "t" = resultado final.
+NOTITIMBA = "https://www.notitimba.com/lots/cfms/aQsEq.php"
+NOTITIMBA_LUGAR = {0: "provincia", 1: "ciudad", 3: "santafe", 4: "entrerios", 6: "cordoba"}
+# Montevideo (lugar 2) queda afuera: no vi cómo manda sus premios (su ficha dice 3 cifras; la cuarta, la primera, sale de Ciudad).
+NOTITIMBA_TURNOS = {"D": "previa", "P": "primera", "M": "matutina", "V": "vespertina", "N": "nocturna"}
+NV_SOLICITO = re.compile(r"(?P<a>[^.;:]*?)\bsolicit\w*\s+a\s+(?P<b>[^.;:]*?)\s+(?:un\s+|el\s+)?sorteo\s+no\s+vinculante", re.I)
+RESPALDO = {"NotiTimba"}                                # fuentes que solo valen si ninguna otra trajo ese sorteo
+
+
+def _jurisdiccion_en_texto(texto):
+    for qid, nombre, rx in JURISDICCIONES:
+        if re.search(rx, texto, re.I):
+            return qid, nombre
+    return None, None
+
+
+def interpretar_notitimba(texto, ahora, fresco=True):
+    """Interpreta la respuesta de aQsEq.php. Devuelve ({quiniela: sorteo}, avisos).
+    Con fresco=False no se controla la fecha ni la hora (para probar con respuestas guardadas)."""
+    seg = texto.split("|")
+    cab = seg[0].split("ç")                        # "ç"
+    if cab[0] != "t":                                   # otro modo: sorteo en vivo (números provisorios) u otra cosa
+        return {}, []
+    if len(seg) < 6 + 4 * (max(NOTITIMBA_LUGAR) + 1):
+        return {}, ["la respuesta es más corta de lo esperado. ¿Cambió el formato?"]
+    m = re.fullmatch(r"(\d{4})(\d{2})(\d{2})", seg[2].strip())
+    ctrl = seg[4].split("&")
+    turno = NOTITIMBA_TURNOS.get(ctrl[2].strip()) if len(ctrl) >= 3 else None
+    if not m or not turno or not ctrl[0].strip().isdigit():
+        return {}, ["no entiendo la fecha o el turno de la respuesta. ¿Cambió el formato?"]
+    if int(ctrl[0]) & 8:                                # la página muestra "sorteando": los números son provisorios
+        return {}, []
+    try:
+        d = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    except ValueError:
+        return {}, ["la fecha de la respuesta no es válida."]
+    fecha = d.isoformat()
+    if fresco:
+        if d < ahora.date() - timedelta(days=1) or d > ahora.date():
+            return {}, []                               # resultado viejo: no sirve
+        hh, mm = map(int, HORARIOS["base"][turno].split(":"))
+        if datetime(d.year, d.month, d.day, hh, mm, tzinfo=AR) > ahora:
+            return {}, [f"trae un sorteo {turno} del {fecha} que todavía no empezó. Lo descarto."]
+    letras = seg[5].strip().upper()
+    letras = letras if re.fullmatch(r"[A-ZÑ]{4}", letras) else None
+    por_q, avisos = {}, []
+    for lugar, q in NOTITIMBA_LUGAR.items():
+        estado, cifras, premios = (seg[6 + 4 * lugar + k].strip() for k in range(3))
+        if estado == "0" or not premios or set(premios) <= {"-"}:
+            continue                                    # esa quiniela no tiene resultados en este turno
+        etiqueta = f"{q} {turno} {fecha}"
+        if cifras != "4" or not re.fullmatch(r"\d{120}", premios):
+            avisos.append(f"{etiqueta}: NotiTimba manda los premios en un formato que no reconozco. Lo descarto.")
+            continue
+        trozos = [premios[i:i + 6] for i in range(0, 120, 6)]
+        if any(t[:2] != "00" for t in trozos):
+            avisos.append(f"{etiqueta}: NotiTimba manda los premios en un formato que no reconozco. Lo descarto.")
+            continue
+        por_q[q] = {"fecha": fecha, "turno": turno, "numeros": [t[2:] for t in trozos], "nombre": None,
+                    "letras": letras if q == "ciudad" else None}
+    # El aviso del encabezado solo vale si la página lo muestra (bit 128). Si no, es un mensaje viejo que quedó cargado.
+    aviso = cab[2] if len(cab) > 2 else ""
+    try:
+        banderas = int(cab[1])
+    except ValueError:
+        banderas = 0
+    if banderas & 128 and NO_VINCULANTE.search(aviso):
+        s = NV_SOLICITO.search(aviso)
+        afectada = _jurisdiccion_en_texto(s.group("a"))[0] if s else None
+        por = _jurisdiccion_en_texto(s.group("b"))[1] if s else None
+        if afectada in por_q and por:
+            por_q[afectada]["no_vinculante"], por_q[afectada]["sorteado_por"] = True, por
+            avisos.append(f"NOTA {afectada} {turno} {fecha}: sorteo NO VINCULANTE (realizado por {por}), según el aviso de NotiTimba.")
+        else:
+            avisos.append(f"NotiTimba publica un aviso de sorteo no vinculante que no pude aplicar a ninguna quiniela: «{aviso[:160]}». Revisalo a mano.")
+    return por_q, avisos
+
+
+def leer_notitimba(quiniela, ahora, bajar, ya_tiene=lambda fecha, turno: False):
+    """NotiTimba trae un solo sorteo (el último) con todas las jurisdicciones: se baja una vez y cada quiniela toma el suyo."""
+    if quiniela not in NOTITIMBA_LUGAR.values():
+        return [], []
+    por_q, avisos = interpretar_notitimba(bajar(NOTITIMBA), ahora)
+    otras = tuple(q for q in QUINIELAS if q != quiniela)
+    avisos = [a for a in avisos if not a.startswith(tuple(f"{o} " for o in otras) + tuple(f"NOTA {o} " for o in otras))]
+    s = por_q.get(quiniela)
+    if s and (not ya_tiene(s["fecha"], s["turno"]) or s.get("no_vinculante")):
+        return [s], avisos
+    return [], avisos
 
 
 # ---------- Varias fuentes a la vez ----------
@@ -501,15 +607,39 @@ def _leer_lanacion(quiniela, ahora, bajar, ya_tiene):
 
 
 # Para sumar otra fuente: escribí una función (quiniela, ahora, bajar, ya_tiene) -> (sorteos, avisos) y agregala acá.
-LECTORES = (("Web oficial", leer_oficial), ("La Nación", _leer_lanacion), ("El Cronista", leer_cronista))
+LECTORES = (("Web oficial", leer_oficial), ("La Nación", _leer_lanacion), ("El Cronista", leer_cronista), ("NotiTimba", leer_notitimba))
+
+
+def _anotar(elegidos, q, nombre, s, avisos, respaldo=False):
+    """Suma un sorteo leído a los elegidos de una quiniela: el primero que llega se queda; los demás solo completan datos."""
+    k = (s["fecha"], s["turno"])
+    previo = elegidos.get(k)
+    if previo is None:
+        elegidos[k] = (nombre, s)
+    elif previo[1]["numeros"] != s["numeros"]:
+        motivo = f"{nombre} es solo respaldo." if respaldo else "que llegó primero."
+        avisos.append(f"{q} {s['turno']} {s['fecha']}: {previo[0]} y {nombre} no coinciden. Me quedo con {previo[0]}, {motivo}")
+    else:                                               # mismos números: se completa lo que le falte a la primera
+        base = previo[1]
+        for campo in ("letras", "nombre"):
+            if not base.get(campo) and s.get(campo):
+                base[campo] = s[campo]
+        if s.get("no_vinculante") and not base.get("no_vinculante"):
+            base["no_vinculante"], base["sorteado_por"] = True, s.get("sorteado_por")
 
 
 def consultar(quinielas, ahora, bajar, ya_tiene, lectores=LECTORES):
-    """Pregunta a todas las fuentes a la vez. Para cada sorteo vale la primera fuente que lo trae.
+    """Pregunta a todas las fuentes a la vez. Para cada sorteo vale la primera fuente que lo trae;
+    las de RESPALDO (NotiTimba) solo cuentan si ninguna otra lo trajo, aunque sí completan datos que falten.
     Devuelve ({quiniela: [sorteos]}, avisos)."""
     bajar = Descargas(bajar)
     elegidos = {q: {} for q in quinielas}
-    avisos = []
+    respaldos, avisos = [], []
+
+    def avisar(texto):
+        if texto not in avisos:                         # las cinco quinielas leen lo mismo: el aviso sale una sola vez
+            avisos.append(texto)
+
     with ThreadPoolExecutor(max_workers=max(1, len(quinielas) * len(lectores))) as pool:
         futuros = {}
         for q in quinielas:
@@ -520,23 +650,17 @@ def consultar(quinielas, ahora, bajar, ya_tiene, lectores=LECTORES):
             try:
                 sorteos, av = fut.result()
             except Exception as e:                      # una fuente caída no debe frenar a las demás
-                avisos.append(f"{q}: {nombre} no respondió ({e})")
+                avisar(f"{nombre} no respondió ({e})")
                 continue
-            avisos += [a if a.startswith(("NOTA ", q + " ")) else f"{q}: {nombre}: {a}" for a in av]
+            for a in av:
+                avisar(a if a.startswith(("NOTA ", q + " ")) else f"{nombre}: {a}")
             for s in sorteos:
-                k = (s["fecha"], s["turno"])
-                previo = elegidos[q].get(k)
-                if previo is None:
-                    elegidos[q][k] = (nombre, s)
-                elif previo[1]["numeros"] != s["numeros"]:
-                    avisos.append(f"{q} {s['turno']} {s['fecha']}: {previo[0]} y {nombre} no coinciden. Me quedo con {previo[0]}, que llegó primero.")
-                else:                                   # mismos números: se completa lo que le falte a la primera
-                    base = previo[1]
-                    for campo in ("letras", "nombre"):
-                        if not base.get(campo) and s.get(campo):
-                            base[campo] = s[campo]
-                    if s.get("no_vinculante") and not base.get("no_vinculante"):
-                        base["no_vinculante"], base["sorteado_por"] = True, s.get("sorteado_por")
+                if nombre in RESPALDO:
+                    respaldos.append((q, nombre, s))
+                else:
+                    _anotar(elegidos[q], q, nombre, s, avisos)
+    for q, nombre, s in respaldos:                      # recién ahora, con todas las demás fuentes ya contadas
+        _anotar(elegidos[q], q, nombre, s, avisos, respaldo=True)
     return {q: [s for _, s in elegidos[q].values()] for q in quinielas}, avisos
 
 
@@ -580,28 +704,67 @@ def unir(datos, quiniela, sorteos):
 def guardar(datos, ahora):
     datos["version"], datos["demo"] = 1, False
     datos["actualizado"] = ahora.isoformat(timespec="seconds")
-    for f in sorted(datos["dias"], reverse=True)[DIAS_A_GUARDAR:]:
+    limite = (ahora.date() - timedelta(days=DIAS_A_GUARDAR - 1)).isoformat()
+    for f in [f for f in datos["dias"] if f < limite]:  # lo más viejo que el historial se descarta
         del datos["dias"][f]
     SALIDA.parent.mkdir(parents=True, exist_ok=True)
     SALIDA.write_text(json.dumps(datos, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
 
+def turnos_del_dia(quiniela, dia_semana):
+    """{turno: "HH:MM"} que se sortean ese día de la semana (0 = lunes ... 6 = domingo)."""
+    if dia_semana == 6:                                 # domingo: no hay sorteos
+        return {}
+    horarios = HORARIOS.get(quiniela, HORARIOS["base"])
+    if quiniela == "montevideo" and dia_semana == 5:    # los sábados Montevideo sortea solo la nocturna
+        return {t: h for t, h in horarios.items() if t == "nocturna"}
+    return dict(horarios)
+
+
 def pendientes(datos, ahora):
     """Quinielas con algún sorteo de hoy que ya debería estar y todavía no está cargado."""
-    if ahora.weekday() == 6:                            # domingo
-        return set()
     hoy, minutos = ahora.strftime("%Y-%m-%d"), ahora.hour * 60 + ahora.minute
     faltan = set()
     for q in QUINIELAS:
-        horarios = HORARIOS.get(q, HORARIOS["base"])
-        for turno, hhmm in horarios.items():
-            if q == "montevideo" and ahora.weekday() == 5 and turno != "nocturna":
-                continue
+        for turno, hhmm in turnos_del_dia(q, ahora.weekday()).items():
             h, m = map(int, hhmm.split(":"))
             t = h * 60 + m
             if t <= minutos <= t + MINUTOS_DE_ESPERA and not datos["dias"].get(hoy, {}).get(q, {}).get(turno):
                 faltan.add(q)
     return faltan
+
+
+def faltantes(datos, ahora):
+    """Quinielas a las que les falta algún sorteo ya jugado en los días anteriores del historial (hoy lo cubre `pendientes`).
+    Un feriado sin sorteos también figura acá, pero no cuesta casi nada: la web oficial no lo lista y no se baja nada."""
+    faltan = set()
+    for i in range(1, DIAS_A_GUARDAR):
+        dia = ahora.date() - timedelta(days=i)
+        for q in QUINIELAS:
+            for turno in turnos_del_dia(q, dia.weekday()):
+                if not datos["dias"].get(dia.isoformat(), {}).get(q, {}).get(turno):
+                    faltan.add(q)
+    return faltan
+
+
+def ajustar_montevideo(sorteos, ciudad):
+    """Montevideo = número uruguayo de 3 cifras + la primera cifra del número de Ciudad en la misma posición.
+    Si un sorteo llega de 3 cifras se completa con Ciudad (si todavía no está, se espera). Si llega de 4, se controla que la
+    primera cifra coincida con la de Ciudad (en los sorteos reales coincide siempre) y, si no, se avisa pero se guarda.
+    `ciudad` es {(fecha, turno): [20 números]}. Devuelve (sorteos, avisos)."""
+    salida, avisos = [], []
+    for s in sorteos:
+        etiqueta = f"montevideo {s['turno']} {s['fecha']}"
+        base = ciudad.get((s["fecha"], s["turno"]))
+        if len(s["numeros"][0]) == 3:
+            if not base:
+                avisos.append(f"{etiqueta}: llegó de 3 cifras y todavía no tengo el sorteo de Ciudad para completarlo. Espero a la próxima vuelta.")
+                continue
+            s = {**s, "numeros": [b[0] + n for b, n in zip(base, s["numeros"])]}
+        elif base and any(b[0] != n[0] for b, n in zip(base, s["numeros"])):
+            avisos.append(f"{etiqueta}: la primera cifra no coincide con la de Ciudad en alguna posición, y en los sorteos reales siempre coincide. Revisalo.")
+        salida.append(s)
+    return salida, avisos
 
 
 def descargar(url):
@@ -612,6 +775,8 @@ def descargar(url):
     }
     if url.startswith(OFICIAL):
         headers["Referer"] = OFICIAL + "/"
+    elif url.startswith(NOTITIMBA):
+        headers["Referer"] = "https://www.notitimba.com/lots/"
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=15) as r:
         return r.read().decode(r.headers.get_content_charset() or "utf-8", errors="replace")
@@ -622,13 +787,21 @@ def main():
     ap.add_argument("--siempre", action="store_true", help="consultar todas las fuentes")
     ap.add_argument("--archivo", help="HTML guardado para probar el lector")
     ap.add_argument("--quiniela", default="provincia", help="quiniela a la que corresponde --archivo")
-    ap.add_argument("--fuente", choices=("oficial", "lanacion", "cronista"), default="lanacion", help="de qué sitio es --archivo")
+    ap.add_argument("--fuente", choices=("oficial", "lanacion", "cronista", "notitimba"), default="lanacion", help="de qué sitio es --archivo")
     ap.add_argument("--turno", help="solo para --fuente cronista: turno de la nota")
     ap.add_argument("--fecha", help="solo para --fuente cronista: fecha de la nota (AAAA-MM-DD)")
     a = ap.parse_args()
 
     if a.archivo:
         html = Path(a.archivo).read_text(encoding="utf-8", errors="replace")
+        if a.fuente == "notitimba":                     # respuesta guardada de aQsEq.php (no se controla fecha ni hora)
+            por_q, avisos = interpretar_notitimba(html, datetime.now(AR), fresco=False)
+            for q, s in por_q.items():
+                print(f"{q:<10} {s['fecha']} {s['turno']:<10} cabeza={s['numeros'][0][-2:]} letras={s['letras']}{' NO VINCULANTE' if s.get('no_vinculante') else ''} -> {' '.join(s['numeros'])}")
+            for v in avisos:
+                print("AVISO:", v)
+            print(f"{len(por_q)} quiniela(s) leída(s).")
+            return 0 if por_q else 1
         if a.fuente == "oficial":                       # el archivo trae todas las quinielas de un sorteo
             datos = leer_datos_oficiales(html)
             if datos is None:
@@ -661,15 +834,25 @@ def main():
 
     ahora = datetime.now(AR)
     datos = cargar_json()
-    objetivo = set(QUINIELAS) if a.siempre else pendientes(datos, ahora)
+    urgentes = set(QUINIELAS) if a.siempre else pendientes(datos, ahora)
+    huecos = faltantes(datos, ahora)
+    objetivo = urgentes | huecos
     if not objetivo:
         print("Nada pendiente en este momento.")
         return 0
+    lectores = LECTORES if urgentes else ()
+    if huecos:                                          # relleno del historial: la web oficial, mirando todo el período
+        lectores += (("Web oficial", partial(leer_oficial, dias_atras=DIAS_A_GUARDAR - 1, tope=80)),)
 
     def ya_tiene(q, fecha, turno):
         return bool(datos["dias"].get(fecha, {}).get(q, {}).get(turno))
 
-    leidos, avisos = consultar(sorted(objetivo), ahora, descargar, ya_tiene)
+    leidos, avisos = consultar(sorted(objetivo), ahora, descargar, ya_tiene, lectores)
+    if leidos.get("montevideo"):
+        ciudad = {(f, tu): v["numeros"] for f, qs in datos["dias"].items() for tu, v in qs.get("ciudad", {}).items() if v.get("numeros")}
+        ciudad.update({(s["fecha"], s["turno"]): s["numeros"] for s in leidos.get("ciudad", [])})
+        leidos["montevideo"], av = ajustar_montevideo(leidos["montevideo"], ciudad)
+        avisos += av
     hubo_cambio = False
     for q in sorted(leidos):
         cambio, av = unir(datos, q, leidos[q])
