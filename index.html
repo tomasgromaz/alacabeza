@@ -225,7 +225,7 @@ const QUINIELAS = [
   { id:'santafe',    nombre:'Santa Fe',   cifras:4 },
   { id:'cordoba',    nombre:'Córdoba',    cifras:4 },
   { id:'entrerios',  nombre:'Entre Ríos', cifras:4 },
-  { id:'montevideo', nombre:'Montevideo', cifras:3 },
+  { id:'montevideo', nombre:'Montevideo', cifras:4 },   // número uruguayo de 3 cifras + la primera cifra del número de Ciudad (Nacional) en la misma posición
 ];
 const TURNOS = [
   { id:'previa', nombre:'Previa' }, { id:'primera', nombre:'Primera' }, { id:'matutina', nombre:'Matutina' },
@@ -295,13 +295,14 @@ function sorteoDemo(f,q,t){
   return { numeros, nombre:null, letras };
 }
 function datosDemo(){
-  const h = ahora(), dias = {}, lista = [];
-  for (let i = 0; i < 10 && lista.length < 3; i++){ const f = sumarDias(h.fecha,-i); if (diaSemana(f) !== 0) lista.push(f); }
+  const h = ahora(), dias = {}, lista = listaDias(h);
   for (const f of lista){
     dias[f] = {};
     for (const q of QUINIELAS) for (const t of turnosDe(q.id,diaSemana(f))){
       if (f === h.fecha && h.min < minutos(horarioDe(q.id,t.id)) + 8) continue;
-      (dias[f][q.id] = dias[f][q.id] || {})[t.id] = sorteoDemo(f,q,t.id);
+      const s = sorteoDemo(f,q,t.id), ciudad = dias[f].ciudad?.[t.id];
+      if (q.id === 'montevideo' && ciudad) s.numeros = s.numeros.map((n,i) => ciudad.numeros[i][0] + n.slice(1));   // la primera cifra sale de Ciudad
+      (dias[f][q.id] = dias[f][q.id] || {})[t.id] = s;
     }
   }
   // Un sorteo de ejemplo "no vinculante": el último de Ciudad del día más reciente que tenga alguno.
@@ -329,10 +330,12 @@ function estadoDe(dia,qid,tid,h){
   return h.min < t + VENTANA_SORTEO ? 'sorteando' : 'sin';
 }
 
+/* Hoy y los 9 días anteriores. Los domingos no hay sorteos, así que no figuran. */
+const DIAS_VISIBLES = 10;
 function listaDias(h){
-  const s = new Set(Object.keys(estado.datos?.dias || {}));
-  if (h.dow !== 0) s.add(h.fecha);
-  return [...s].filter(f => f <= h.fecha && diaSemana(f) !== 0).sort().reverse().slice(0,7);
+  const lista = [];
+  for (let i = 0; i < DIAS_VISIBLES; i++){ const f = sumarDias(h.fecha,-i); if (diaSemana(f) !== 0) lista.push(f); }
+  return lista;
 }
 
 /* ---------- Dibujo ---------- */
@@ -414,8 +417,15 @@ function renderHero(h){
 }
 
 function renderControles(h){
-  const dias = listaDias(h);
+  const dias = listaDias(h), tira = $('dias'), x = tira.scrollLeft;
   poner('dias', dias.map(f => `<button class="dia" data-dia="${f}" aria-pressed="${f === estado.dia}">${f === h.fecha ? 'Hoy' : f === sumarDias(h.fecha,-1) ? 'Ayer' : fechaCorta(f)}</button>`).join(''));
+  tira.scrollLeft = x;                                  // al redibujar la tira no se pierde dónde estaba el dedo
+  const sel = tira.querySelector('[aria-pressed="true"]');
+  if (sel){                                             // y el día elegido queda a la vista aunque se haya cambiado por otro camino
+    const b = sel.getBoundingClientRect(), c = tira.getBoundingClientRect();
+    if (b.left < c.left) tira.scrollLeft += b.left - c.left - 8;
+    else if (b.right > c.right) tira.scrollLeft += b.right - c.right + 8;
+  }
   poner('chips', [{id:'todas',nombre:'Todas'}, ...QUINIELAS].map(q => `<button class="chip" data-filtro="${q.id}" aria-pressed="${q.id === estado.filtro}">${q.nombre}</button>`).join(''));
 }
 
