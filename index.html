@@ -65,6 +65,9 @@ button{font:inherit;color:inherit;cursor:pointer}
 /* avisos y banner de ahora */
 .aviso{margin:6px 0 0;padding:11px 14px;border:1px solid var(--aviso-borde);border-radius:12px;background:var(--aviso-fondo);color:var(--aviso-tinta);font-size:14px}
 .aviso strong{font-weight:700}
+.nv{display:block;width:fit-content;margin:5px 0 0;padding:1px 8px;border:1px solid var(--aviso-borde);border-radius:99px;background:var(--aviso-fondo);color:var(--aviso-tinta);font-size:11px;font-weight:700;font-stretch:100%;letter-spacing:0;line-height:1.5;white-space:nowrap}
+.hero .nv{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.34);color:#fff}
+.nvnota{margin:14px 0 0}
 .ahora{--c:var(--hueco);display:flex;align-items:center;gap:12px;margin:12px 0 4px;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--c) 12%,var(--sup));border:1px solid color-mix(in srgb,var(--c) 38%,var(--linea))}
 
 /* resultado destacado, con aire de estudio de sorteo */
@@ -301,12 +304,21 @@ function datosDemo(){
       (dias[f][q.id] = dias[f][q.id] || {})[t.id] = sorteoDemo(f,q,t.id);
     }
   }
+  // Un sorteo de ejemplo "no vinculante": el último de Ciudad del día más reciente que tenga alguno.
+  for (const f of lista){
+    const ids = Object.keys(dias[f].ciudad || {});
+    if (ids.length){ Object.assign(dias[f].ciudad[ids[ids.length - 1]], { no_vinculante:true, sorteado_por:'Entre Ríos' }); break; }
+  }
   return { demo:true, actualizado:null, dias };
 }
 
 /* ---------- Estado ---------- */
 const estado = { datos:null, texto:null, conexion:'carga', dia:null, filtro:'todas', hoja:null, revisado:null, foco:null };
 const sorteo = (dia,q,t) => { const s = estado.datos?.dias?.[dia]?.[q]?.[t]; return s && Array.isArray(s.numeros) && s.numeros.length ? s : null; };
+
+const esNV = s => !!(s && (s.no_vinculante || s.sorteado_por));
+const etiquetaNV = s => esNV(s) ? '<span class="nv">No vinculante</span>' : '';
+const notaNV = (s,q) => esNV(s) ? `<p class="aviso nvnota"><strong>Sorteo no vinculante.</strong> Lo realizó ${s.sorteado_por ? esc(s.sorteado_por) : 'otra jurisdicción'} porque se suspendió el sorteo de ${esc(q.nombre)}. Confirmá en tu agencia cómo se pagan las apuestas de este turno.</p>` : '';
 
 function estadoDe(dia,qid,tid,h){
   if (sorteo(dia,qid,tid)) return 'listo';
@@ -335,8 +347,8 @@ function filaHtml(dia,q,t,e){
   const nombre = `<span class="qn">${esc(q.nombre)}${q.sub ? `<small>${esc(q.sub)}</small>` : ''}</span>`;
   if (e === 'listo'){
     const n = s.numeros[0], n2 = n.slice(-2);
-    return `<li><button class="fila" data-fila="${k}" data-k="${k}" aria-label="${esc(q.nombre)}, ${t.nombre}: a la cabeza ${n}. Ver los 20 premios">
-      <span class="ft">${nombre}<span class="fig">${n2} ${esc(nombreDe(n2,s.nombre))}</span></span>${bolas([...n])}${flecha}</button></li>`;
+    return `<li><button class="fila" data-fila="${k}" data-k="${k}" aria-label="${esc(q.nombre)}, ${t.nombre}: a la cabeza ${n}.${esNV(s) ? ' Sorteo no vinculante.' : ''} Ver los 20 premios">
+      <span class="ft">${nombre}<span class="fig">${n2} ${esc(nombreDe(n2,s.nombre))}${etiquetaNV(s)}</span></span>${bolas([...n])}${flecha}</button></li>`;
   }
   const vacias = Array(q.cifras).fill(e === 'sorteando' ? '?' : '');
   const texto = e === 'sorteando' ? 'Sorteando ahora' : e === 'pend' ? `Se sortea a las ${horarioDe(q.id,t.id)}` : dia < ahora().fecha ? 'Sin datos' : 'Todavía sin datos';
@@ -395,10 +407,10 @@ function renderHero(h){
   const x = vivo || turnos.filter(y => y.e === 'listo').sort((a,b) => b.hora.localeCompare(a.hora))[0];
   if (!x) return poner('hero','');
   const estilo = `--c:var(--${x.t.id});--ct:var(--${x.t.id}-t)`;
-  const tope = `<div class="hero-top"><span class="hero-q">${esc(q.nombre)}${q.sub ? `<small>${esc(q.sub)}</small>` : ''}</span><span class="hero-t">${x.t.nombre} ${x.hora}</span></div>`;
+  const tope = `<div class="hero-top"><span class="hero-q">${esc(q.nombre)}${q.sub ? `<small>${esc(q.sub)}</small>` : ''}${etiquetaNV(sorteo(dia,qid,x.t.id))}</span><span class="hero-t">${x.t.nombre} ${x.hora}</span></div>`;
   if (vivo) return poner('hero', `<div class="hero" style="${estilo}" data-k="hero">${tope}${bolas(Array(q.cifras).fill('?'),{gira:true})}<div class="hero-pie"><p class="hero-num">Sorteando ahora <span>Esperando el resultado</span></p></div></div>`);
   const n = sorteo(dia,qid,x.t.id).numeros[0], n2 = n.slice(-2);
-  poner('hero', `<button class="hero" style="${estilo}" data-fila="${qid}/${x.t.id}" data-k="hero" aria-label="${esc(q.nombre)}, ${x.t.nombre}: a la cabeza ${n}. Ver los 20 premios">${tope}${bolas([...n])}<div class="hero-pie"><p class="hero-num">${n2} <span>${esc(nombreDe(n2,sorteo(dia,qid,x.t.id).nombre))}</span></p><span class="hero-ver">Ver los 20 premios ${flecha}</span></div></button>`);
+  poner('hero', `<button class="hero" style="${estilo}" data-fila="${qid}/${x.t.id}" data-k="hero" aria-label="${esc(q.nombre)}, ${x.t.nombre}: a la cabeza ${n}.${esNV(sorteo(dia,qid,x.t.id)) ? ' Sorteo no vinculante.' : ''} Ver los 20 premios">${tope}${bolas([...n])}<div class="hero-pie"><p class="hero-num">${n2} <span>${esc(nombreDe(n2,sorteo(dia,qid,x.t.id).nombre))}</span></p><span class="hero-ver">Ver los 20 premios ${flecha}</span></div></button>`);
 }
 
 function renderControles(h){
@@ -462,7 +474,7 @@ function renderHoja(){
       <div class="acciones"><button class="btn" data-copiar>Copiar</button><button class="btn principal" data-compartir>Compartir</button></div>`;
   }
   const html = `<div class="panel-cab"><div><h2 id="hoja-titulo">${esc(q.nombre)}${q.sub ? `<small>${esc(q.sub)}</small>` : ''}</h2><p class="sub">${t.nombre}, ${fechaCorta(dia)} a las ${horarioDe(qid,tid)}</p></div>
-    <button class="cerrar" data-cerrar aria-label="Cerrar"><svg viewBox="0 0 18 18" aria-hidden="true"><path d="M3 3l12 12M15 3L3 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>${chips}${cuerpo}`;
+    <button class="cerrar" data-cerrar aria-label="Cerrar"><svg viewBox="0 0 18 18" aria-hidden="true"><path d="M3 3l12 12M15 3L3 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>${chips}${notaNV(s,q)}${cuerpo}`;
   const cambio = poner('panel', html);
   $('panel').style.setProperty('--c', `var(--${tid})`);
   $('panel').style.setProperty('--ct', `var(--${tid}-t)`);
@@ -493,7 +505,7 @@ function cerrarHoja(desdePop){
 
 function textoSorteo(){
   const { q:qid, t:tid, dia } = estado.hoja, q = qDe(qid), t = tDe(tid), s = sorteo(dia,qid,tid);
-  return `${q.nombre}, ${t.nombre}, ${fechaCorta(dia)}\n` + s.numeros.slice(0,20).map((n,i) => `${i+1}) ${n}`).join('\n');
+  return `${q.nombre}, ${t.nombre}, ${fechaCorta(dia)}\n` + (esNV(s) ? `Sorteo no vinculante${s.sorteado_por ? ' (realizado por ' + s.sorteado_por + ')' : ''}\n` : '') + s.numeros.slice(0,20).map((n,i) => `${i+1}) ${n}`).join('\n');
 }
 
 let tostadaT = null;
