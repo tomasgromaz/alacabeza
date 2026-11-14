@@ -92,7 +92,8 @@ LETRAS = re.compile(r"Letras\s*:?\s*([A-ZÑ])\s*[-–]?\s*([A-ZÑ])\s*[-–]?\s*
 
 
 def _intentar(tokens, i, cifras):
-    """Lee 20 premios seguidos desde tokens[i]. Cada premio puede venir como 'PPNNNN' o como 'PP' y 'NNNN'."""
+    """Lee 20 premios seguidos desde tokens[i]. Cada premio puede venir como 'PPNNNN' o como 'PP' y 'NNNN'.
+    Devuelve (numeros, indice_del_token_siguiente) o None."""
     nums, j, largo = [], i, None
     for pos in range(1, 21):
         if j >= len(tokens):
@@ -108,7 +109,29 @@ def _intentar(tokens, i, cifras):
             return None
         largo = len(n)
         nums.append(n)
-    return nums
+    return nums, j
+
+
+NO_VINCULANTE = re.compile(r"no\s+vinculantes?", re.I)
+JURISDICCIONES = (
+    ("entrerios", "Entre Ríos", r"entre\s*r[ií]os"),
+    ("santafe", "Santa Fe", r"santa\s*fe"),
+    ("cordoba", "Córdoba", r"c[óo]rdoba"),
+    ("montevideo", "Montevideo", r"montevideo"),
+    ("provincia", "Provincia", r"provincia|buenos\s+aires"),
+    ("ciudad", "Ciudad", r"ciudad|nacional"),
+)
+
+
+def detectar_no_vinculante(ventana, quiniela):
+    """Si el texto del sorteo dice 'no vinculante', devuelve (True, jurisdiccion_o_None).
+    La jurisdicción solo se informa si, descartando la propia quiniela, aparece una sola cerca de la frase."""
+    m = NO_VINCULANTE.search(ventana)
+    if not m:
+        return False, None
+    cerca = ventana[max(0, m.start() - 140): m.end() + 140]
+    otras = [nombre for qid, nombre, rx in JURISDICCIONES if qid != quiniela and re.search(rx, cerca, re.I)]
+    return True, (otras[0] if len(otras) == 1 else None)
 
 
 def leer_sorteos(html, quiniela):
@@ -132,8 +155,10 @@ def leer_sorteos(html, quiniela):
         lt = LETRAS.search(bloque)
         letras = "".join(lt.groups()).upper() if lt else None
         resto = bloque[cab.end():] if cab else bloque
-        tokens = re.findall(r"\d+", resto)
-        nums = next((r for r in (_intentar(tokens, k, cifras) for k in range(len(tokens))) if r), None)
+        marcas_num = list(re.finditer(r"\d+", resto))
+        tokens = [t.group() for t in marcas_num]
+        hallado = next((r for r in (_intentar(tokens, k, cifras) for k in range(len(tokens))) if r), None)
+        nums = hallado[0] if hallado else None
         etiqueta = f"{quiniela} {turno} {fecha}"
         if not nums:
             avisos.append(f"{etiqueta}: no pude leer los 20 premios (puede que el sorteo todavía no esté publicado).")
@@ -142,7 +167,15 @@ def leer_sorteos(html, quiniela):
             avisos.append(f"{etiqueta}: 'A la Cabeza' dice {cabeza} pero el primer premio es {nums[0]}. Lo descarto.")
             continue
         vistos.add((fecha, turno))
-        sorteos.append({"fecha": fecha, "turno": turno, "numeros": nums, "nombre": nombre or None, "letras": letras})
+        # Se mira solo el texto de este sorteo (del encabezado hasta un poco después del último premio),
+        # para no confundirse con avisos generales del pie de la página.
+        fin_premios = (cab.end() if cab else 0) + marcas_num[hallado[1] - 1].end()
+        no_vinc, por = detectar_no_vinculante(texto[m.start(): m.end() + fin_premios + 160], quiniela)
+        sorteo = {"fecha": fecha, "turno": turno, "numeros": nums, "nombre": nombre or None, "letras": letras}
+        if no_vinc:
+            sorteo["no_vinculante"], sorteo["sorteado_por"] = True, por
+            avisos.append(f"NOTA {etiqueta}: sorteo NO VINCULANTE" + (f" (realizado por {por})" if por else "") + ".")
+        sorteos.append(sorteo)
     return sorteos, avisos
 
 
@@ -162,6 +195,8 @@ def unir(datos, quiniela, sorteos):
     cambio = False
     for s in sorteos:
         nuevo = {"numeros": s["numeros"], "nombre": s["nombre"], "letras": s["letras"]}
+        if s.get("no_vinculante"):
+            nuevo["no_vinculante"], nuevo["sorteado_por"] = True, s.get("sorteado_por")
         dia = datos["dias"].setdefault(s["fecha"], {}).setdefault(quiniela, {})
         if dia.get(s["turno"]) != nuevo:
             dia[s["turno"]] = nuevo
@@ -236,7 +271,7 @@ def main():
             print(f"::warning::{q}: no se pudo descargar ({e})")
             continue
         for v in avisos:
-            print(f"::warning::{v}")
+            print(f"::notice::{v}" if v.startswith("NOTA ") else f"::warning::{v}")
         if unir(datos, q, sorteos):
             hubo_cambio = True
             print(f"{q}: datos nuevos ({len(sorteos)} sorteo(s) leído(s)).")
