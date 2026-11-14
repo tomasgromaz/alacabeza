@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>a la cabeza: quinielas en vivo</title>
+<meta name="description" content="Resultados de las quinielas de Provincia, Ciudad, Santa Fe, Córdoba, Entre Ríos y Montevideo, por turno y con los 20 premios.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#E6EAF8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#080C24" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icono-180.png">
+<link rel="icon" href="icono-192.png" type="image/png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="a la cabeza">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --fuente:"Archivo",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --fondo:#E6EAF8; --sup:#FFFFFF; --tinta:#0F1630; --tinta2:#4F5A78; --linea:#D3DAEE; --hueco:#C5CCE2;
+  --aviso-fondo:#FFF4D6; --aviso-borde:#EBCF7C; --aviso-tinta:#5A4300;
+  /* un color por turno: del amanecer a la noche, y el color del texto que va encima */
+  --previa:#F4C430; --primera:#FF8A3D; --matutina:#EC4F7B; --vespertina:#8657F0; --nocturna:#2E49D6;
+  --previa-t:#10162F; --primera-t:#10162F; --matutina-t:#10162F; --vespertina-t:#FFFFFF; --nocturna-t:#FFFFFF;
+  --disco-tinta:#10162F; --escenario:#0D1233; --tinte:14%;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --fondo:#080C24; --sup:#131A38; --tinta:#EEF1FA; --tinta2:#A3ADCC; --linea:#232C55; --hueco:#323C66; --escenario:#0F1640; --tinte:24%;
+    --aviso-fondo:#2A2410; --aviso-borde:#5C4B14; --aviso-tinta:#F2D88A;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--fondo);color:var(--tinta);font:400 16px/1.4 var(--fuente);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+body.bloq{overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:3px solid var(--nocturna);outline-offset:2px}
+.app{max-width:980px;margin:0 auto;padding:0 16px calc(40px + env(safe-area-inset-bottom))}
+
+/* cabecera */
+.cab{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(14px + env(safe-area-inset-top)) 0 4px}
+.marca{margin:0;display:flex;align-items:center;gap:10px;font-stretch:120%;font-weight:800;font-size:23px;letter-spacing:-.025em;line-height:1}
+.logo{width:56px;height:14px;flex:none}
+.vivo{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border:1px solid var(--linea);border-radius:999px;background:var(--sup);font-size:13px;font-weight:600;white-space:nowrap}
+.punto{width:8px;height:8px;border-radius:50%;background:var(--hueco)}
+.vivo[data-e="ok"] .punto{background:var(--matutina);animation:pulso 1.8s ease-in-out infinite}
+.vivo[data-e="error"] .punto{background:#D9822B}
+.fecha{margin:2px 0 12px;color:var(--tinta2);font-size:15px}
+
+/* controles */
+.controles{position:sticky;top:0;z-index:5;margin:0 -16px;padding:8px 16px 10px;background:var(--fondo)}
+.dias,.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.dias::-webkit-scrollbar,.chips::-webkit-scrollbar{display:none}
+.dias{margin-bottom:8px}
+.dia{flex:none;min-width:64px;padding:8px 12px;border:1px solid var(--linea);border-radius:10px;background:transparent;font-weight:600;font-size:14px;color:var(--tinta2)}
+.dia[aria-pressed="true"]{background:var(--sup);color:var(--tinta);border-color:var(--tinta)}
+.chip{flex:none;padding:9px 15px;border:1px solid var(--linea);border-radius:999px;background:var(--sup);font-weight:600;font-size:14px;line-height:1;white-space:nowrap}
+.chip[aria-pressed="true"]{background:var(--tinta);border-color:var(--tinta);color:var(--fondo)}
+
+/* avisos y banner de ahora */
+.aviso{margin:6px 0 0;padding:11px 14px;border:1px solid var(--aviso-borde);border-radius:12px;background:var(--aviso-fondo);color:var(--aviso-tinta);font-size:14px}
+.aviso strong{font-weight:700}
+.ahora{--c:var(--hueco);display:flex;align-items:center;gap:12px;margin:12px 0 4px;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--c) 12%,var(--sup));border:1px solid color-mix(in srgb,var(--c) 38%,var(--linea))}
+
+/* resultado destacado, con aire de estudio de sorteo */
+.hero{display:block;position:relative;width:100%;margin:14px 0 2px;padding:18px 18px 16px;border:1px solid rgba(255,255,255,.08);border-radius:24px;text-align:left;color:#fff;overflow:hidden;
+  background:radial-gradient(110% 80% at 12% -10%,color-mix(in srgb,var(--c) 42%,transparent) 0,transparent 62%),var(--escenario)}
+button.hero:active{transform:scale(.995)}
+.hero-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px}
+.hero-q{font-stretch:114%;font-weight:800;font-size:20px;letter-spacing:-.015em}
+.hero-q small{font-stretch:100%;font-weight:500;font-size:12px;opacity:.7;margin-left:6px}
+.hero-t{flex:none;padding:5px 11px;border-radius:999px;background:var(--c);color:var(--ct);font-weight:700;font-size:13px}
+.hero .bolas{gap:9px}
+.hero .bolilla{--d:64px;box-shadow:0 12px 30px -8px color-mix(in srgb,var(--c) 75%,transparent)}
+.hero .bolilla:not(.vacia):not(.gira){animation:entra .8s cubic-bezier(.2,.9,.3,1.15) both;animation-delay:calc(var(--i)*110ms)}
+.hero-pie{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 12px;margin-top:16px}
+.hero-num{flex:1 1 230px;margin:0;font-size:22px;font-weight:700;line-height:1.15}
+.hero-num span{font-weight:500;opacity:.85}
+.hero-ver{display:inline-flex;align-items:center;gap:4px;margin-left:auto;font-size:13px;font-weight:600;opacity:.8;white-space:nowrap}
+.hero-ver svg{width:14px;height:14px}
+.ahora p{margin:0;font-size:15px}
+.ahora strong{font-weight:700}
+
+/* bolillas */
+.bolas{display:flex;gap:6px}
+.bolilla{--d:30px;position:relative;flex:none;width:var(--d);height:var(--d);border-radius:50%;display:grid;place-items:center;
+  background:var(--c,var(--hueco));
+  background:radial-gradient(circle at 32% 26%,color-mix(in srgb,var(--c,var(--hueco)) 62%,#fff) 0,var(--c,var(--hueco)) 46%,color-mix(in srgb,var(--c,var(--hueco)) 80%,#000) 100%)}
+.bolilla::before{content:"";position:absolute;inset:19%;border-radius:50%;background:#fff;box-shadow:inset 0 -1px 2px rgba(16,22,47,.18)}
+.bolilla b{position:relative;font-weight:800;font-size:calc(var(--d)*.44);line-height:1;color:var(--disco-tinta)}
+.bolilla.vacia{--c:var(--hueco)}
+.bolilla.vacia::before{background:color-mix(in srgb,var(--hueco) 40%,var(--sup))}
+.bolilla.mini{--d:22px}
+.bolilla.mini::before{inset:22%}
+.solo .bolilla{--d:46px}
+.grande .bolilla{--d:52px}
+.bolilla.gira{animation:salto .9s ease-in-out infinite;animation-delay:calc(var(--i,0)*90ms)}
+
+/* tarjetas de turno */
+.turnos{display:grid;gap:14px;margin-top:12px;align-items:start}
+@media (min-width:880px){.turnos{grid-template-columns:1fr 1fr}}
+.turno{background:var(--sup);border:1px solid var(--linea);border-radius:14px;box-shadow:inset 5px 0 0 var(--c);overflow:hidden}
+.turno-cab{display:flex;align-items:center;gap:10px;padding:13px 16px 12px 22px;background:color-mix(in srgb,var(--c) var(--tinte),var(--sup))}
+.turno-cab h2{margin:0;font-stretch:114%;font-weight:800;font-size:21px;letter-spacing:-.02em}
+.hora{padding:3px 10px;border-radius:999px;background:var(--c);color:var(--ct,#10162F);font-size:13px;font-weight:700}
+.est{margin-left:auto;font-size:14px;font-weight:600;color:var(--tinta2)}
+.est-sorteando{color:var(--tinta)}
+.est-sorteando::before{content:"";display:inline-block;width:8px;height:8px;margin-right:7px;border-radius:50%;background:var(--c);animation:pulso 1.2s ease-in-out infinite}
+.turno.pend .turno-cab{padding-bottom:14px}
+.turno.pend h2,.turno.pend .hora{opacity:.7}
+.filas{list-style:none;margin:0;padding:0}
+.fila{display:grid;grid-template-columns:1fr auto 14px;align-items:center;gap:12px;width:100%;padding:12px 14px 12px 22px;border:0;border-top:1px solid var(--linea);background:none;text-align:left}
+button.fila:hover{background:color-mix(in srgb,var(--c) 7%,transparent)}
+.fila.inactiva{cursor:default}
+.qn{display:block;font-weight:700;font-size:16px}
+.qn small{font-weight:500;font-size:12px;color:var(--tinta2);margin-left:4px}
+.fig{display:block;color:var(--tinta2);font-size:14px;margin-top:1px}
+.fila svg{width:14px;height:14px;color:var(--tinta2);opacity:.8}
+.solo .fila{grid-template-columns:1fr 14px;grid-template-areas:"ft cv" "bo cv";row-gap:12px;padding-top:18px;padding-bottom:18px}
+.solo .fila .ft{grid-area:ft}
+.solo .fila .bolas{grid-area:bo}
+.solo .fila .cv{grid-area:cv}
+.solo .qn{font-size:18px}
+.flash{animation:destello 3.6s ease-out 1}
+
+/* hoja de detalle */
+.hoja{position:fixed;inset:0;z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.hoja[hidden]{display:none}
+.velo{position:absolute;inset:0;background:rgba(8,12,30,.55);opacity:0;transition:opacity .2s}
+.panel{position:relative;width:min(580px,100%);max-height:92vh;max-height:92dvh;overflow:auto;overscroll-behavior:contain;background:var(--sup);border-radius:24px 24px 0 0;padding:24px 20px calc(20px + env(safe-area-inset-bottom));box-shadow:inset 0 6px 0 var(--c,var(--hueco));transform:translateY(100%);transition:transform .28s cubic-bezier(.2,.8,.2,1)}
+.hoja.abierta .velo{opacity:1}
+.hoja.abierta .panel{transform:none}
+@media (min-width:700px){.hoja{align-items:center}.panel{border-radius:24px;max-height:88vh;max-height:88dvh}}
+.panel-cab{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.panel-cab h2{margin:0;font-stretch:115%;font-weight:800;font-size:26px;letter-spacing:-.02em;line-height:1.1}
+.panel-cab h2 small{font-stretch:100%;font-weight:500;font-size:13px;letter-spacing:0;color:var(--tinta2);margin-left:6px}
+.sub{margin:4px 0 0;color:var(--tinta2);font-size:15px}
+.cerrar{flex:none;width:40px;height:40px;margin:-6px -8px 0 0;display:grid;place-items:center;border:0;border-radius:50%;background:var(--fondo)}
+.cerrar svg{width:18px;height:18px}
+.sq{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:14px -20px 0;padding:0 20px}
+.sq::-webkit-scrollbar{display:none}
+.sq .chip{padding:8px 13px;font-size:13px}
+.cabeza{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;margin:18px 0 6px;padding:18px 16px;border-radius:18px;color:#fff;
+  background:radial-gradient(110% 90% at 10% -20%,color-mix(in srgb,var(--c) 40%,transparent) 0,transparent 62%),var(--escenario)}
+.cabeza .bolas{gap:7px}
+.cabeza .bolilla{box-shadow:0 10px 24px -8px color-mix(in srgb,var(--c) 75%,transparent)}
+.cabeza>div:last-child{flex:1 1 160px}
+.cab-num{margin:0;font-size:20px;font-weight:700;line-height:1.2}
+.cab-num span{font-weight:500}
+.cab-sec{margin:2px 0 0;font-size:14px;color:rgba(255,255,255,.72)}
+.letras{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:14px;color:rgba(255,255,255,.72)}
+.letra{width:26px;height:26px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.28);border-radius:7px;background:rgba(255,255,255,.1);color:#fff;font-weight:700;font-size:14px}
+.premios{list-style:none;margin:8px 0 0;padding:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(10,auto);grid-auto-flow:column;column-gap:22px}
+.prem{display:grid;grid-template-columns:26px 1fr;grid-template-areas:"p n" "p f";align-items:baseline;padding:8px 0;border-bottom:1px solid var(--linea)}
+.pos{grid-area:p;align-self:center;width:22px;height:22px;display:grid;place-items:center;border-radius:50%;color:var(--tinta2);font-size:12px;font-weight:700}
+.prem.top .pos{background:var(--c);color:var(--ct,#10162F)}
+.prem.corte{border-bottom:2px solid var(--c)}
+.num{grid-area:n;font-size:21px;font-weight:500;letter-spacing:.02em;line-height:1.15}
+.num strong{font-weight:800}
+.nom{grid-area:f;font-size:12.5px;color:var(--tinta2);line-height:1.25}
+.acciones{display:flex;gap:10px;margin-top:18px}
+.btn{flex:1;padding:13px 16px;border:1px solid var(--tinta);border-radius:12px;background:transparent;font-weight:700;font-size:15px}
+.btn.principal{background:var(--tinta);color:var(--fondo)}
+.vacio{margin:22px 0;color:var(--tinta2)}
+
+/* pie y avisos flotantes */
+.pie{margin-top:26px;color:var(--tinta2);font-size:13px;line-height:1.5;max-width:60ch}
+.pie p{margin:0 0 6px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));z-index:30;transform:translate(-50%,24px);opacity:0;pointer-events:none;max-width:min(92vw,420px);padding:12px 18px;border-radius:14px;background:var(--tinta);color:var(--fondo);font-weight:600;font-size:15px;text-align:center;transition:opacity .2s,transform .2s}
+.toast.visible{opacity:1;transform:translate(-50%,0)}
+
+@keyframes pulso{50%{opacity:.35}}
+@keyframes salto{50%{transform:translateY(-4px)}}
+@keyframes entra{from{transform:translateX(-52px) rotate(-220deg);opacity:0}to{transform:none;opacity:1}}
+@keyframes destello{0%,35%{background:color-mix(in srgb,var(--c) 22%,transparent)}100%{background:transparent}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="cab">
+    <h1 class="marca">
+      <svg class="logo" viewBox="0 0 56 14" aria-hidden="true"><circle cx="7" cy="7" r="7" style="fill:var(--previa)"/><circle cx="21" cy="7" r="7" style="fill:var(--primera)"/><circle cx="35" cy="7" r="7" style="fill:var(--matutina)"/><circle cx="49" cy="7" r="7" style="fill:var(--vespertina)"/></svg>
+      a la cabeza
+    </h1>
+    <div class="vivo" id="vivo" data-e="carga" role="status"><span class="punto"></span><span id="vivo-txt">Conectando</span></div>
+  </header>
+  <p class="fecha" id="fecha"></p>
+
+  <div class="controles">
+    <div class="dias" id="dias" aria-label="Día"></div>
+    <div class="chips" id="chips" aria-label="Quiniela"></div>
+  </div>
+
+  <div id="avisos"></div>
+  <div id="hero"></div>
+  <div id="ahora"></div>
+  <main class="turnos" id="turnos"></main>
+  <footer class="pie" id="pie"></footer>
+</div>
+
+<div class="hoja" id="hoja" hidden>
+  <div class="velo" data-cerrar></div>
+  <section class="panel" id="panel" role="dialog" aria-modal="true" aria-labelledby="hoja-titulo"></section>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- Configuración (editá acá horarios y quinielas) ---------- */
+const TZ = 'America/Argentina/Buenos_Aires';
+const QUINIELAS = [
+  { id:'provincia',  nombre:'Provincia',  cifras:4 },
+  { id:'ciudad',     nombre:'Ciudad',     sub:'ex Nacional', cifras:4 },
+  { id:'santafe',    nombre:'Santa Fe',   cifras:4 },
+  { id:'cordoba',    nombre:'Córdoba',    cifras:4 },
+  { id:'entrerios',  nombre:'Entre Ríos', cifras:4 },
+  { id:'montevideo', nombre:'Montevideo', cifras:3 },
+];
+const TURNOS = [
+  { id:'previa', nombre:'Previa' }, { id:'primera', nombre:'Primera' }, { id:'matutina', nombre:'Matutina' },
+  { id:'vespertina', nombre:'Vespertina' }, { id:'nocturna', nombre:'Nocturna' },
+];
+const HORARIOS = {
+  base:       { previa:'10:15', primera:'12:00', matutina:'15:00', vespertina:'18:00', nocturna:'21:00' },
+  montevideo: { matutina:'15:00', nocturna:'21:00' },
+};
+const VENTANA_SORTEO = 45;     // minutos que se considera "sorteando" si todavía no llegó el dato
+const CADA_MS = 30000;         // cada cuánto se revisa el archivo de resultados
+const ARCHIVO = 'data/resultados.json';
+
+/* Tabla tradicional de los sueños (00 al 99). Se puede editar. */
+const NOMBRES = 'Los huevos|El agua|El niño|San Cono|La cama|El gato|El perro|El revólver|El incendio|El arroyo|La leche|El palito|El soldado|La yeta|El borracho|La niña bonita|El anillo|La desgracia|La sangre|El pescado|La fiesta|La mujer|El loco|El cocinero|El caballo|La gallina|La misa|El peine|Los cerros|San Pedro|Santa Rosa|La luz|El dinero|Cristo|La cabeza|El pajarito|La manteca|El dentista|Las piedras|La lluvia|El cura|El cuchillo|La zapatilla|El balcón|La cárcel|El vino|Los tomates|El muerto|El muerto que habla|La carne|El pan|El serrucho|Madre e hijo|El barco|La vaca|La música|La caída|El jorobado|El ahogado|Las plantas|La virgen|La escopeta|La inundación|El casamiento|El llanto|El cazador|Las lombrices|La mordida|Los sobrinos|Los vicios|La muerte|El excremento|La sorpresa|El hospital|La gente negra|Los besos|Las llamas|Las piernas|La ramera|El ladrón|Las bochas|Las flores|La pelea|El mal tiempo|La iglesia|La linterna|El humo|Los piojos|El papa|La rata|El miedo|El excusado|El médico|El enamorado|El cementerio|Los anteojos|El marido|La mesa|La lavandera|El hermano'.split('|');
+
+/* ---------- Utilidades ---------- */
+const $ = id => document.getElementById(id);
+const REDUCIDO = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const params = new URLSearchParams(location.search);
+const FORZAR_DEMO = params.has('demo');
+const AHORA_FIJO = params.get('ahora');          // para probar: ?ahora=2026-11-14T16:42
+const T0 = Date.now();
+const DIAS_SEM = ['dom','lun','mar','mié','jue','vie','sáb'];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2,'0');
+const minutos = hhmm => { const [h,m] = hhmm.split(':').map(Number); return h*60+m; };
+const qDe = id => QUINIELAS.find(q => q.id === id);
+const tDe = id => TURNOS.find(t => t.id === id);
+const nombreDe = (n2, respaldo) => NOMBRES[+n2] || respaldo || '';
+
+function diaSemana(f){ const [y,m,d] = f.split('-').map(Number); return new Date(Date.UTC(y,m-1,d)).getUTCDay(); }
+function sumarDias(f,n){ const [y,m,d] = f.split('-').map(Number); return new Date(Date.UTC(y,m-1,d+n)).toISOString().slice(0,10); }
+
+function ahora(){
+  let d;
+  if (AHORA_FIJO){
+    const s = /(Z|[+-]\d\d:?\d\d)$/i.test(AHORA_FIJO) ? AHORA_FIJO : AHORA_FIJO + '-03:00';
+    const base = new Date(s);
+    d = isNaN(base) ? new Date() : new Date(base.getTime() + (Date.now() - T0));
+  } else d = new Date();
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:TZ,hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).formatToParts(d).map(x => [x.type,x.value]));
+  const fecha = `${p.year}-${p.month}-${p.day}`;
+  return { fecha, min:(+p.hour)*60+(+p.minute), hh:`${p.hour}:${p.minute}`, dow:diaSemana(fecha) };
+}
+
+const horarioDe = (qid,tid) => (HORARIOS[qid] || HORARIOS.base)[tid];
+function turnosDe(qid,dow){
+  if (dow === 0) return [];                                   // domingo: no hay sorteos
+  const hs = HORARIOS[qid] || HORARIOS.base;
+  let ts = TURNOS.filter(t => hs[t.id]);
+  if (qid === 'montevideo' && dow === 6) ts = ts.filter(t => t.id === 'nocturna');   // sábados, solo nocturna
+  return ts;
+}
+const fechaLarga = f => { const [y,m,d] = f.split('-').map(Number); return new Intl.DateTimeFormat('es-AR',{weekday:'long',day:'numeric',month:'long',timeZone:'UTC'}).format(new Date(Date.UTC(y,m-1,d))); };
+const fechaCorta = f => { const [,m,d] = f.split('-'); return `${DIAS_SEM[diaSemana(f)]} ${+d}/${+m}`; };
+const horaLocal = iso => { const d = new Date(iso); return isNaN(d) ? null : new Intl.DateTimeFormat('es-AR',{timeZone:TZ,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(d); };
+function duracion(min){ if (min < 1) return 'menos de 1 min'; const h = Math.floor(min/60), m = min%60; return h ? `${h} h ${m ? m + ' min' : ''}`.trim() : `${m} min`; }
+
+/* ---------- Datos de ejemplo (para ver la app sin resultados reales) ---------- */
+function mulberry32(a){ return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hash(s){ let h = 2166136261; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h,16777619); } return h >>> 0; }
+function sorteoDemo(f,q,t){
+  const r = mulberry32(hash(f + q.id + t)), usados = new Set(), numeros = [];
+  while (numeros.length < 20){ const v = String(Math.floor(r() * 10 ** q.cifras)).padStart(q.cifras,'0'); if (!usados.has(v)){ usados.add(v); numeros.push(v); } }
+  const letras = q.id === 'ciudad' ? Array.from({length:4}, () => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[Math.floor(r()*26)]).join('') : null;
+  return { numeros, nombre:null, letras };
+}
+function datosDemo(){
+  const h = ahora(), dias = {}, lista = [];
+  for (let i = 0; i < 10 && lista.length < 3; i++){ const f = sumarDias(h.fecha,-i); if (diaSemana(f) !== 0) lista.push(f); }
+  for (const f of lista){
+    dias[f] = {};
+    for (const q of QUINIELAS) for (const t of turnosDe(q.id,diaSemana(f))){
+      if (f === h.fecha && h.min < minutos(horarioDe(q.id,t.id)) + 8) continue;
+      (dias[f][q.id] = dias[f][q.id] || {})[t.id] = sorteoDemo(f,q,t.id);
+    }
+  }
+  return { demo:true, actualizado:null, dias };
+}
+
+/* ---------- Estado ---------- */
+const estado = { datos:null, texto:null, conexion:'carga', dia:null, filtro:'todas', hoja:null, revisado:null, foco:null };
+const sorteo = (dia,q,t) => { const s = estado.datos?.dias?.[dia]?.[q]?.[t]; return s && Array.isArray(s.numeros) && s.numeros.length ? s : null; };
+
+function estadoDe(dia,qid,tid,h){
+  if (sorteo(dia,qid,tid)) return 'listo';
+  if (dia < h.fecha) return 'sin';
+  if (dia > h.fecha) return 'pend';
+  const t = minutos(horarioDe(qid,tid));
+  if (h.min < t) return 'pend';
+  return h.min < t + VENTANA_SORTEO ? 'sorteando' : 'sin';
+}
+
+function listaDias(h){
+  const s = new Set(Object.keys(estado.datos?.dias || {}));
+  if (h.dow !== 0) s.add(h.fecha);
+  return [...s].filter(f => f <= h.fecha && diaSemana(f) !== 0).sort().reverse().slice(0,7);
+}
+
+/* ---------- Dibujo ---------- */
+const previo = {};
+function poner(id,html){ if (previo[id] !== html){ previo[id] = html; $(id).innerHTML = html; return true; } return false; }
+
+const bolas = (digitos,{vacia=false,gira=false}={}) => `<span class="bolas" aria-hidden="true">${digitos.map((d,i) => `<span class="bolilla${vacia?' vacia':''}${gira?' gira':''}" style="--i:${i}"><b>${esc(d)}</b></span>`).join('')}</span>`;
+const flecha = '<svg class="cv" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function filaHtml(dia,q,t,e){
+  const s = sorteo(dia,q.id,t.id), k = `${q.id}/${t.id}`;
+  const nombre = `<span class="qn">${esc(q.nombre)}${q.sub ? `<small>${esc(q.sub)}</small>` : ''}</span>`;
+  if (e === 'listo'){
+    const n = s.numeros[0], n2 = n.slice(-2);
+    return `<li><button class="fila" data-fila="${k}" data-k="${k}" aria-label="${esc(q.nombre)}, ${t.nombre}: a la cabeza ${n}. Ver los 20 premios">
+      <span class="ft">${nombre}<span class="fig">${n2} ${esc(nombreDe(n2,s.nombre))}</span></span>${bolas([...n])}${flecha}</button></li>`;
+  }
+  const vacias = Array(q.cifras).fill(e === 'sorteando' ? '?' : '');
+  const texto = e === 'sorteando' ? 'Sorteando ahora' : e === 'pend' ? `Se sortea a las ${horarioDe(q.id,t.id)}` : dia < ahora().fecha ? 'Sin datos' : 'Todavía sin datos';
+  return `<li><div class="fila inactiva" data-k="${q.id}/${t.id}"><span class="ft">${nombre}<span class="fig">${texto}</span></span>${bolas(vacias,{vacia:e !== 'sorteando',gira:e === 'sorteando'})}<span class="cv"></span></div></li>`;
+}
+
+function tarjetas(h){
+  const dia = estado.dia, dow = diaSemana(dia);
+  const qs = estado.filtro === 'todas' ? QUINIELAS : QUINIELAS.filter(q => q.id === estado.filtro);
+  const lista = [];
+  for (const t of TURNOS){
+    const filas = qs.filter(q => turnosDe(q.id,dow).some(x => x.id === t.id)).map(q => ({ q, e:estadoDe(dia,q.id,t.id,h) }));
+    if (!filas.length) continue;
+    const hora = filas.map(f => horarioDe(f.q.id,t.id)).sort()[0];
+    const listos = filas.filter(f => f.e === 'listo').length;
+    let agg;
+    if (filas.some(f => f.e === 'sorteando')) agg = 'sorteando';
+    else if (listos === filas.length) agg = 'listo';
+    else if (listos > 0) agg = 'parcial';
+    else agg = filas.every(f => f.e === 'pend') ? 'pend' : 'sin';
+    lista.push({ t, hora, filas, agg, listos });
+  }
+  const peso = c => c.agg === 'sorteando' ? 0 : c.agg === 'pend' ? 2 : 1;
+  lista.sort((a,b) => peso(a) - peso(b) || (peso(a) === 2 ? a.hora.localeCompare(b.hora) : b.hora.localeCompare(a.hora)));
+  return lista;
+}
+
+function renderTurnos(h){
+  const cards = tarjetas(h);
+  $('turnos').classList.toggle('solo', estado.filtro !== 'todas');
+  const textoEst = c => ({ sorteando:'Sorteando', listo:c.filas.length > 1 ? 'Completo' : 'Listo', parcial:`${c.listos} de ${c.filas.length}`, pend:'Pendiente', sin:'Sin datos' })[c.agg];
+  const html = cards.map(c => `<section class="turno ${c.agg === 'pend' ? 'pend' : ''}" style="--c:var(--${c.t.id});--ct:var(--${c.t.id}-t)" aria-label="${c.t.nombre}">
+    <header class="turno-cab"><h2>${c.t.nombre}</h2><span class="hora">${c.hora}</span><span class="est est-${c.agg}">${textoEst(c)}</span></header>
+    ${c.agg === 'pend' ? '' : `<ul class="filas">${c.filas.map(f => filaHtml(estado.dia,f.q,c.t,f.e)).join('')}</ul>`}
+  </section>`).join('');
+  poner('turnos', html || '<p class="vacio">No hay sorteos para este día.</p>');
+  return cards;
+}
+
+function renderAhora(h,cards){
+  if (estado.dia !== h.fecha || h.dow === 0) return poner('ahora','');
+  const vivo = cards.find(c => c.agg === 'sorteando');
+  const sig = cards.filter(c => c.agg === 'pend');
+  let c, txt;
+  if (vivo){ c = vivo; txt = `<strong>Sorteando ahora: ${vivo.t.nombre}</strong>`; }
+  else if (sig.length){ c = sig[0]; txt = `<strong>Próximo sorteo: ${c.t.nombre}</strong>, a las ${c.hora} (en ${duracion(minutos(c.hora) - h.min)})`; }
+  else return poner('ahora', `<div class="ahora"><p><strong>Terminaron los sorteos de hoy.</strong> Mañana arrancan con la Previa.</p></div>`);
+  poner('ahora', `<div class="ahora" style="--c:var(--${c.t.id})"><span class="bolilla mini ${vivo ? 'gira' : ''}"><b></b></span><p>${txt}</p></div>`);
+}
+
+/* Resultado destacado: lo que se está sorteando o el último que salió de la quiniela elegida (por defecto, Provincia). */
+function renderHero(h){
+  const qid = estado.filtro === 'todas' ? 'provincia' : estado.filtro, q = qDe(qid), dia = estado.dia;
+  const turnos = turnosDe(qid,diaSemana(dia)).map(t => ({ t, e:estadoDe(dia,qid,t.id,h), hora:horarioDe(qid,t.id) }));
+  const vivo = turnos.find(x => x.e === 'sorteando');
+  const x = vivo || turnos.filter(y => y.e === 'listo').sort((a,b) => b.hora.localeCompare(a.hora))[0];
+  if (!x) return poner('hero','');
+  const estilo = `--c:var(--${x.t.id});--ct:var(--${x.t.id}-t)`;
+  const tope = `<div class="hero-top"><span class="hero-q">${esc(q.nombre)}${q.sub ? `<small>${esc(q.sub)}</small>` : ''}</span><span class="hero-t">${x.t.nombre} ${x.hora}</span></div>`;
+  if (vivo) return poner('hero', `<div class="hero" style="${estilo}" data-k="hero">${tope}${bolas(Array(q.cifras).fill('?'),{gira:true})}<div class="hero-pie"><p class="hero-num">Sorteando ahora <span>Esperando el resultado</span></p></div></div>`);
+  const n = sorteo(dia,qid,x.t.id).numeros[0], n2 = n.slice(-2);
+  poner('hero', `<button class="hero" style="${estilo}" data-fila="${qid}/${x.t.id}" data-k="hero" aria-label="${esc(q.nombre)}, ${x.t.nombre}: a la cabeza ${n}. Ver los 20 premios">${tope}${bolas([...n])}<div class="hero-pie"><p class="hero-num">${n2} <span>${esc(nombreDe(n2,sorteo(dia,qid,x.t.id).nombre))}</span></p><span class="hero-ver">Ver los 20 premios ${flecha}</span></div></button>`);
+}
+
+function renderControles(h){
+  const dias = listaDias(h);
+  poner('dias', dias.map(f => `<button class="dia" data-dia="${f}" aria-pressed="${f === estado.dia}">${f === h.fecha ? 'Hoy' : f === sumarDias(h.fecha,-1) ? 'Ayer' : fechaCorta(f)}</button>`).join(''));
+  poner('chips', [{id:'todas',nombre:'Todas'}, ...QUINIELAS].map(q => `<button class="chip" data-filtro="${q.id}" aria-pressed="${q.id === estado.filtro}">${q.nombre}</button>`).join(''));
+}
+
+function renderAvisos(h){
+  const a = [];
+  if (estado.conexion === 'demo') a.push('<div class="aviso"><strong>Datos de ejemplo.</strong> Todavía no hay resultados reales conectados, estos números son inventados. Seguí la guía del LEEME para activar los reales.</div>');
+  if (h.dow === 0) a.push('<div class="aviso">Hoy es domingo y no hay sorteos de quiniela: se juega de lunes a sábado. Estás viendo el último día con resultados.</div>');
+  poner('avisos', a.join(''));
+}
+
+function renderCabecera(h){
+  const e = estado.conexion;
+  $('vivo').dataset.e = e === 'carga' ? 'carga' : e;
+  $('vivo-txt').textContent = e === 'ok' ? 'En vivo' : e === 'demo' ? 'Ejemplo' : e === 'error' ? 'Sin conexión' : 'Conectando';
+  const rev = estado.revisado ? `, revisado ${estado.revisado}` : '';
+  const f = estado.dia || h.fecha;
+  $('fecha').textContent = fechaLarga(f)[0].toUpperCase() + fechaLarga(f).slice(1) + (e === 'ok' && f === h.fecha ? rev : '');
+  const dato = estado.datos?.actualizado ? horaLocal(estado.datos.actualizado) : null;
+  poner('pie', `<p>${dato ? `Último resultado cargado a las ${dato}. ` : ''}Información de carácter informativo: confirmá siempre con el extracto oficial de tu agencia.</p><p>Jugá con responsabilidad.</p>`);
+}
+
+function render(){
+  const h = ahora();
+  if (!estado.dia || !listaDias(h).includes(estado.dia)) estado.dia = listaDias(h)[0] || h.fecha;
+  renderCabecera(h);
+  renderControles(h);
+  renderAvisos(h);
+  const cards = renderTurnos(h);
+  renderHero(h);
+  renderAhora(h,cards);
+  if (estado.hoja) renderHoja();
+  girar();
+}
+
+/* ---------- Bolillas que giran mientras se sortea ---------- */
+let giro = null;
+function girar(){
+  clearInterval(giro); giro = null;
+  const els = document.querySelectorAll('.gira b');
+  if (!els.length || REDUCIDO) return;
+  giro = setInterval(() => els.forEach(b => { if (b.isConnected) b.textContent = Math.floor(Math.random()*10); }), 130);
+}
+
+/* ---------- Hoja con los 20 premios ---------- */
+function renderHoja(){
+  const { q:qid, t:tid, dia } = estado.hoja, q = qDe(qid), t = tDe(tid), s = sorteo(dia,qid,tid), dow = diaSemana(dia);
+  const hermanas = QUINIELAS.filter(x => sorteo(dia,x.id,tid) && turnosDe(x.id,dow).some(z => z.id === tid));
+  const chips = hermanas.length > 1 ? `<div class="sq" role="group" aria-label="Misma quiniela, mismo turno">${hermanas.map(x => `<button class="chip" data-sq="${x.id}" aria-pressed="${x.id === qid}">${x.nombre}</button>`).join('')}</div>` : '';
+  let cuerpo;
+  if (!s) cuerpo = '<p class="vacio">Todavía no hay datos de este sorteo.</p>';
+  else {
+    const n = s.numeros[0], n2 = n.slice(-2);
+    const letras = s.letras ? `<div class="letras">Letras ${[...String(s.letras).replace(/[^A-ZÑ]/gi,'')].map(l => `<span class="letra">${esc(l.toUpperCase())}</span>`).join('')}</div>` : '';
+    cuerpo = `<div class="cabeza grande" style="--c:var(--${tid})">${bolas([...n])}<div><p class="cab-num">${n2} <span>${esc(nombreDe(n2,s.nombre))}</span></p><p class="cab-sec">A la cabeza</p>${letras}</div></div>
+      <ol class="premios">${s.numeros.slice(0,20).map((x,i) => `<li class="prem${i < 5 ? ' top' : ''}${i === 4 ? ' corte' : ''}"><span class="pos">${i+1}</span><span class="num">${esc(x.slice(0,-2))}<strong>${esc(x.slice(-2))}</strong></span><span class="nom">${esc(nombreDe(x.slice(-2)))}</span></li>`).join('')}</ol>
+      <div class="acciones"><button class="btn" data-copiar>Copiar</button><button class="btn principal" data-compartir>Compartir</button></div>`;
+  }
+  const html = `<div class="panel-cab"><div><h2 id="hoja-titulo">${esc(q.nombre)}${q.sub ? `<small>${esc(q.sub)}</small>` : ''}</h2><p class="sub">${t.nombre}, ${fechaCorta(dia)} a las ${horarioDe(qid,tid)}</p></div>
+    <button class="cerrar" data-cerrar aria-label="Cerrar"><svg viewBox="0 0 18 18" aria-hidden="true"><path d="M3 3l12 12M15 3L3 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>${chips}${cuerpo}`;
+  const cambio = poner('panel', html);
+  $('panel').style.setProperty('--c', `var(--${tid})`);
+  $('panel').style.setProperty('--ct', `var(--${tid}-t)`);
+}
+
+function abrirHoja(q,t){
+  estado.foco = document.activeElement;
+  estado.hoja = { q, t, dia:estado.dia };
+  renderHoja();
+  const hoja = $('hoja');
+  hoja.hidden = false;
+  document.body.classList.add('bloq');
+  requestAnimationFrame(() => { hoja.classList.add('abierta'); $('panel').querySelector('.cerrar')?.focus(); });
+  history.pushState({ hoja:1 }, '', '#detalle');
+}
+function cerrarHoja(desdePop){
+  if (!estado.hoja) return;
+  estado.hoja = null;
+  const hoja = $('hoja');
+  hoja.classList.remove('abierta');
+  document.body.classList.remove('bloq');
+  setTimeout(() => { if (!estado.hoja){ hoja.hidden = true; previo.panel = null; } }, REDUCIDO ? 0 : 280);
+  if (!desdePop && history.state && history.state.hoja) history.back();
+  const f = estado.foco; estado.foco = null;
+  if (f && f.isConnected) f.focus();
+  else { const k = f?.dataset?.k; if (k) document.querySelector(`[data-k="${k}"]`)?.focus(); }
+}
+
+function textoSorteo(){
+  const { q:qid, t:tid, dia } = estado.hoja, q = qDe(qid), t = tDe(tid), s = sorteo(dia,qid,tid);
+  return `${q.nombre}, ${t.nombre}, ${fechaCorta(dia)}\n` + s.numeros.slice(0,20).map((n,i) => `${i+1}) ${n}`).join('\n');
+}
+
+let tostadaT = null;
+function avisar(msg){
+  const t = $('toast'); t.textContent = msg; t.classList.add('visible');
+  clearTimeout(tostadaT); tostadaT = setTimeout(() => t.classList.remove('visible'), 3600);
+}
+async function copiar(texto){
+  try { await navigator.clipboard.writeText(texto); return true; }
+  catch { const a = document.createElement('textarea'); a.value = texto; a.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(a); a.select(); let ok = false; try { ok = document.execCommand('copy'); } catch {} a.remove(); return ok; }
+}
+
+/* ---------- Eventos ---------- */
+document.addEventListener('click', async ev => {
+  const el = ev.target.closest('[data-fila],[data-dia],[data-filtro],[data-cerrar],[data-sq],[data-copiar],[data-compartir]');
+  if (!el) return;
+  if (el.dataset.fila){ const [q,t] = el.dataset.fila.split('/'); abrirHoja(q,t); }
+  else if (el.dataset.dia){ estado.dia = el.dataset.dia; render(); }
+  else if (el.dataset.filtro){ estado.filtro = el.dataset.filtro; render(); }
+  else if ('cerrar' in el.dataset) cerrarHoja();
+  else if (el.dataset.sq){ estado.hoja.q = el.dataset.sq; renderHoja(); $('panel').scrollTop = 0; }
+  else if ('copiar' in el.dataset) avisar(await copiar(textoSorteo()) ? 'Copiado' : 'No se pudo copiar');
+  else if ('compartir' in el.dataset){
+    const texto = textoSorteo();
+    if (navigator.share){ try { await navigator.share({ text:texto }); } catch {} }
+    else avisar(await copiar(texto) ? 'Copiado para compartir' : 'No se pudo compartir');
+  }
+});
+document.addEventListener('keydown', ev => {
+  if (!estado.hoja) return;
+  if (ev.key === 'Escape') return cerrarHoja();
+  if (ev.key === 'Tab'){
+    const f = [...$('panel').querySelectorAll('button')]; if (!f.length) return;
+    const a = f[0], z = f[f.length-1];
+    if (ev.shiftKey && document.activeElement === a){ ev.preventDefault(); z.focus(); }
+    else if (!ev.shiftKey && document.activeElement === z){ ev.preventDefault(); a.focus(); }
+  }
+});
+addEventListener('popstate', () => { if (estado.hoja) cerrarHoja(true); });
+
+/* ---------- Carga en vivo ---------- */
+const claves = d => { const s = new Set(); for (const [f,qs] of Object.entries(d?.dias || {})) for (const [q,ts] of Object.entries(qs)) for (const [t,v] of Object.entries(ts)) if (v?.numeros?.length) s.add(`${f}/${q}/${t}`); return s; };
+
+function aplicar(datos,conexion,texto){
+  const antes = estado.conexion === 'ok' ? claves(estado.datos) : null;
+  estado.datos = datos; estado.texto = texto || null; estado.conexion = conexion; estado.revisado = ahora().hh;
+  render();
+  if (antes && conexion === 'ok'){
+    const h = ahora();
+    const nuevos = [...claves(datos)].filter(k => !antes.has(k) && k.startsWith(h.fecha));
+    if (nuevos.length){
+      const [, q, t] = nuevos[0].split('/'), n = datos.dias[h.fecha][q][t].numeros[0];
+      avisar(nuevos.length === 1 ? `Salió ${qDe(q).nombre}, ${tDe(t).nombre}: ${n}` : `Salieron ${nuevos.length} sorteos nuevos`);
+      if (navigator.vibrate) try { navigator.vibrate(60); } catch {}
+      for (const k of nuevos){ const [, qq, tt] = k.split('/'); document.querySelector(`[data-k="${qq}/${tt}"]`)?.classList.add('flash'); }
+    }
+  }
+}
+
+async function cargar(){
+  if (FORZAR_DEMO) return aplicar(datosDemo(),'demo');
+  try {
+    const r = await fetch(`${ARCHIVO}?ts=${Date.now()}`, { cache:'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const texto = await r.text();
+    if (texto === estado.texto && estado.conexion === 'ok'){ estado.revisado = ahora().hh; return render(); }
+    const j = JSON.parse(texto);
+    if (j.demo || !j.dias || !Object.keys(j.dias).length) return aplicar(datosDemo(),'demo');
+    aplicar(j,'ok',texto);
+  } catch (e) {
+    if (estado.datos && estado.conexion !== 'demo'){ estado.conexion = 'error'; render(); }
+    else aplicar(datosDemo(),'demo');
+  }
+}
+
+render();
+cargar();
+setInterval(() => { if (!document.hidden) cargar(); }, CADA_MS);
+setInterval(() => { if (!document.hidden) render(); }, 20000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) cargar(); });
+addEventListener('online', cargar);
+})();
+</script>
+</body>
+</html>
